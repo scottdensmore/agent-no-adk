@@ -1,0 +1,10 @@
+name: sre-triage-agent
+acli_version: 1.5.0
+agent_directory: .
+region: us-central1
+language: go
+base_template: custom
+create_params:
+  deployment_target: agent_runtime
+  is_a2a: true
+  agent_gateway: false
