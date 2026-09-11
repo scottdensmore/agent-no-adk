@@ -35,6 +35,8 @@ func NewHandler(appName string, invoker AgentInvoker) http.Handler {
 	mux.HandleFunc("/a2a/invoke", h.handleInvoke)
 	mux.HandleFunc(fmt.Sprintf("/a2a/%s/invoke", appName), h.handleInvoke)
 	mux.HandleFunc("/list-apps", h.handleListApps)
+	mux.HandleFunc("/chat", h.handleWebUI)
+	mux.HandleFunc("/ui", h.handleWebUI)
 	mux.HandleFunc("/", h.handleRoot)
 
 	return mux
@@ -99,6 +101,10 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost {
 		h.handleInvoke(w, r)
+		return
+	}
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		h.handleWebUI(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

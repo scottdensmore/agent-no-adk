@@ -191,6 +191,40 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestWebUIEndpoint(t *testing.T) {
+	handler := NewHandler("sre-triage-agent", mockInvoker)
+
+	// Test GET / with Accept: text/html
+	reqBrowser := httptest.NewRequest("GET", "/", nil)
+	reqBrowser.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	wBrowser := httptest.NewRecorder()
+	handler.ServeHTTP(wBrowser, reqBrowser)
+
+	if wBrowser.Code != http.StatusOK {
+		t.Fatalf("expected 200 for browser root, got %d", wBrowser.Code)
+	}
+	contentType := wBrowser.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected text/html Content-Type, got %s", contentType)
+	}
+	body := wBrowser.Body.String()
+	if !strings.Contains(body, "SRE Incident Triage Agent") {
+		t.Errorf("expected HTML body to contain title, got: %s", body)
+	}
+
+	// Test GET /chat
+	reqChat := httptest.NewRequest("GET", "/chat", nil)
+	wChat := httptest.NewRecorder()
+	handler.ServeHTTP(wChat, reqChat)
+
+	if wChat.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /chat, got %d", wChat.Code)
+	}
+	if !strings.Contains(wChat.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("expected text/html for /chat")
+	}
+}
+
 func TestRootPostInvoke(t *testing.T) {
 	handler := NewHandler("sre-triage-agent", mockInvoker)
 
