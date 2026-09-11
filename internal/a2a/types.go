@@ -1,5 +1,7 @@
 package a2a
 
+import "encoding/json"
+
 type AgentCard struct {
 	ProtocolVersion     string            `json:"protocolVersion"`
 	Name                string            `json:"name"`
@@ -45,6 +47,65 @@ type A2AMessage struct {
 	Parts     []A2APart `json:"parts"`
 	TaskID    string    `json:"taskId,omitempty"`
 	ContextID string    `json:"contextId,omitempty"`
+}
+
+func (m *A2AMessage) UnmarshalJSON(data []byte) error {
+	type rawMessage struct {
+		Role      string    `json:"role"`
+		Parts     []A2APart `json:"parts"`
+		TaskID    string    `json:"taskId,omitempty"`
+		ContextID string    `json:"contextId,omitempty"`
+	}
+	var wrapped struct {
+		Message *rawMessage `json:"message"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err == nil && wrapped.Message != nil {
+		m.Role = wrapped.Message.Role
+		m.Parts = wrapped.Message.Parts
+		m.TaskID = wrapped.Message.TaskID
+		m.ContextID = wrapped.Message.ContextID
+		if m.Role == "ROLE_AGENT" {
+			m.Role = "agent"
+		}
+		return nil
+	}
+
+	var direct rawMessage
+	if err := json.Unmarshal(data, &direct); err != nil {
+		return err
+	}
+	m.Role = direct.Role
+	m.Parts = direct.Parts
+	m.TaskID = direct.TaskID
+	m.ContextID = direct.ContextID
+	if m.Role == "ROLE_AGENT" {
+		m.Role = "agent"
+	}
+	return nil
+}
+
+func (m A2AMessage) MarshalJSON() ([]byte, error) {
+	role := m.Role
+	if role == "agent" || role == "" {
+		role = "ROLE_AGENT"
+	}
+	type messagePayload struct {
+		Role      string    `json:"role"`
+		Parts     []A2APart `json:"parts"`
+		TaskID    string    `json:"taskId,omitempty"`
+		ContextID string    `json:"contextId,omitempty"`
+	}
+	wrapped := struct {
+		Message messagePayload `json:"message"`
+	}{
+		Message: messagePayload{
+			Role:      role,
+			Parts:     m.Parts,
+			TaskID:    m.TaskID,
+			ContextID: m.ContextID,
+		},
+	}
+	return json.Marshal(wrapped)
 }
 
 type A2APart struct {

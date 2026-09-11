@@ -89,6 +89,10 @@ func (h *Handler) handleListApps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
 	if r.Method == http.MethodPost {
 		h.handleInvoke(w, r)
 		return
@@ -113,7 +117,7 @@ func (h *Handler) handleInvoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Method != "message/send" && req.Method != "tasks/create" {
+	if req.Method != "message/send" && req.Method != "tasks/create" && req.Method != "SendMessage" && req.Method != "SendStreamingMessage" {
 		h.writeError(w, req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
 		return
 	}
@@ -146,7 +150,6 @@ func (h *Handler) handleInvoke(w http.ResponseWriter, r *http.Request) {
 			Role: "agent",
 			Parts: []A2APart{
 				{
-					Kind: "text",
 					Text: answer,
 				},
 			},

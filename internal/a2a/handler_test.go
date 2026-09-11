@@ -349,3 +349,110 @@ func TestResolveBaseURL(t *testing.T) {
 		}
 	})
 }
+
+func TestA2A1_0_Methods(t *testing.T) {
+	handler := NewHandler("sre-triage-agent", mockInvoker)
+
+	for _, method := range []string{"SendMessage", "SendStreamingMessage"} {
+		t.Run(method, func(t *testing.T) {
+			payload := JSONRPCRequest{
+				JSONRPC: "2.0",
+				ID:      "req-v1-" + method,
+				Method:  method,
+				Params: MessageSendParams{
+					Message: A2AMessage{
+						Role:      "user",
+						Parts:     []A2APart{{Text: "Test v1 method"}},
+						ContextID: "ctx-v1",
+					},
+				},
+			}
+			body, _ := json.Marshal(payload)
+
+			req := httptest.NewRequest("POST", "/a2a/invoke", bytes.NewBuffer(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", w.Code)
+			}
+
+			var jsonResp JSONRPCResponse
+			if err := json.NewDecoder(w.Body).Decode(&jsonResp); err != nil {
+				t.Fatalf("failed to decode response: %v", err)
+			}
+			if jsonResp.Result == nil || jsonResp.Result.ContextID != "ctx-v1" {
+				t.Errorf("unexpected result: %+v", jsonResp.Result)
+			}
+		})
+	}
+}
+
+func TestUnmatchedPathReturns404(t *testing.T) {
+	handler := NewHandler("sre-triage-agent", mockInvoker)
+
+	paths := []string{
+		"/a2a/.well-known/agent-card.json",
+		"/unknown-path",
+		"/api/v1/invalid",
+	}
+
+	for _, path := range paths {
+		req := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for path %q, got %d", path, w.Code)
+		}
+	}
+
+	// Paths containing "." are canonicalized with 301 redirect by http.ServeMux
+	reqDot := httptest.NewRequest("GET", "/a2a/./.well-known/agent-card.json", nil)
+	wDot := httptest.NewRecorder()
+	handler.ServeHTTP(wDot, reqDot)
+	if wDot.Code != http.StatusMovedPermanently {
+		t.Errorf("expected 301 for path with dot, got %d", wDot.Code)
+	}
+}
+
+func TestA2AMessageSerialization(t *testing.T) {
+	msg := A2AMessage{
+		Role:      "agent",
+		Parts:     []A2APart{{Text: "Triage complete"}},
+		ContextID: "ctx-test-ser",
+	}
+
+	b, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	rawStr := string(b)
+	if !strings.Contains(rawStr, `"message"`) || !strings.Contains(rawStr, `"ROLE_AGENT"`) {
+		t.Errorf("expected serialized A2AMessage to contain 'message' and 'ROLE_AGENT', got %s", rawStr)
+	}
+
+	// Test Unmarshal from wrapped format
+	var unmarshaled A2AMessage
+	if err := json.Unmarshal(b, &unmarshaled); err != nil {
+		t.Fatalf("failed to unmarshal wrapped message: %v", err)
+	}
+	if unmarshaled.Role != "agent" {
+		t.Errorf("expected role 'agent', got %q", unmarshaled.Role)
+	}
+	if len(unmarshaled.Parts) == 0 || unmarshaled.Parts[0].Text != "Triage complete" {
+		t.Errorf("unexpected parts: %+v", unmarshaled.Parts)
+	}
+
+	// Test Unmarshal from direct unwrapped format
+	directJSON := `{"role":"ROLE_AGENT","parts":[{"text":"Direct"}],"contextId":"ctx-dir"}`
+	var directMsg A2AMessage
+	if err := json.Unmarshal([]byte(directJSON), &directMsg); err != nil {
+		t.Fatalf("failed to unmarshal direct: %v", err)
+	}
+	if directMsg.Role != "agent" || directMsg.Parts[0].Text != "Direct" {
+		t.Errorf("unexpected direct message: %+v", directMsg)
+	}
+}

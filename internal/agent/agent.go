@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"sre-triage-agent/internal/tools"
 
@@ -50,6 +51,27 @@ func NewAgent(ctx context.Context, cfg Config) (*Agent, error) {
 	project := cfg.ProjectID
 	if project == "" {
 		project = os.Getenv("GOOGLE_CLOUD_PROJECT")
+	}
+	if project == "" {
+		project = os.Getenv("GCLOUD_PROJECT")
+	}
+	if project == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			adcPath := filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
+			if b, err := os.ReadFile(adcPath); err == nil {
+				var adc struct {
+					QuotaProjectID string `json:"quota_project_id"`
+					ProjectID      string `json:"project_id"`
+				}
+				if err := json.Unmarshal(b, &adc); err == nil {
+					if adc.QuotaProjectID != "" {
+						project = adc.QuotaProjectID
+					} else if adc.ProjectID != "" {
+						project = adc.ProjectID
+					}
+				}
+			}
+		}
 	}
 	location := cfg.Location
 	if location == "" {
