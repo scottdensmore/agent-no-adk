@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
@@ -313,12 +312,33 @@ func TestJSONRPC_Errors(t *testing.T) {
 			t.Errorf("expected error message to contain timeout, got %q", jsonResp.Error.Message)
 		}
 	})
+
+	t.Run("body too large", func(t *testing.T) {
+		handler := NewHandler("sre-triage-agent", mockInvoker)
+		hugeReader := io.LimitReader(io.MultiReader(strings.NewReader(`{"jsonrpc":"2.0",`), bytes.NewReader(bytes.Repeat([]byte(" "), 11*1024*1024))), 11*1024*1024)
+		req := httptest.NewRequest("POST", "/a2a/invoke", hugeReader)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		var jsonResp JSONRPCResponse
+		if err := json.NewDecoder(w.Body).Decode(&jsonResp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if jsonResp.Error == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if jsonResp.Error.Code != -32700 {
+			t.Errorf("expected code -32700, got %d", jsonResp.Error.Code)
+		}
+		if jsonResp.Error.Message != "Request body too large or failed to read" {
+			t.Errorf("expected message 'Request body too large or failed to read', got %q", jsonResp.Error.Message)
+		}
+	})
 }
 
 func TestResolveBaseURL(t *testing.T) {
 	t.Run("APP_URL env takes precedence", func(t *testing.T) {
-		os.Setenv("APP_URL", "https://custom-agent.run.app/")
-		defer os.Unsetenv("APP_URL")
+		t.Setenv("APP_URL", "https://custom-agent.run.app/")
 
 		handler := NewHandler("sre-triage-agent", mockInvoker)
 		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", nil)
@@ -333,7 +353,7 @@ func TestResolveBaseURL(t *testing.T) {
 	})
 
 	t.Run("X-Forwarded-Proto header", func(t *testing.T) {
-		os.Unsetenv("APP_URL")
+		t.Setenv("APP_URL", "")
 
 		handler := NewHandler("sre-triage-agent", mockInvoker)
 		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", nil)

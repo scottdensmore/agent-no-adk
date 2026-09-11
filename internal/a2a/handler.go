@@ -105,9 +105,10 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleInvoke(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.writeError(w, nil, -32700, "Failed to read request body")
+		h.writeError(w, nil, -32700, "Request body too large or failed to read")
 		return
 	}
 

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,35 @@ func TestReadLogFile_EdgeCases(t *testing.T) {
 	}
 	if len(res.Lines) != 2 {
 		t.Errorf("expected 2 lines read, got %d", len(res.Lines))
+	}
+}
+
+func TestReadLogFile_Streaming(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "stream_test.log")
+	var sb strings.Builder
+	for i := 0; i < 500; i++ {
+		sb.WriteString(fmt.Sprintf("log line %d\n", i))
+	}
+	if err := os.WriteFile(logPath, []byte(sb.String()), 0644); err != nil {
+		t.Fatalf("failed to write stream test log: %v", err)
+	}
+
+	res, err := ReadLogFile(logPath, 10, 100)
+	if err != nil {
+		t.Fatalf("ReadLogFile failed: %v", err)
+	}
+	if res.TotalLines != 500 {
+		t.Errorf("expected 500 total lines, got %d", res.TotalLines)
+	}
+	if res.LinesRead != 10 {
+		t.Errorf("expected 10 lines read, got %d", res.LinesRead)
+	}
+	if len(res.Lines) != 10 {
+		t.Fatalf("expected 10 lines, got %d", len(res.Lines))
+	}
+	if res.Lines[0] != "log line 100" || res.Lines[9] != "log line 109" {
+		t.Errorf("unexpected line content: first=%q, last=%q", res.Lines[0], res.Lines[9])
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"sre-triage-agent/internal/a2a"
@@ -26,12 +25,8 @@ func TestResolveConfig(t *testing.T) {
 
 	// Test environment variables used when flags empty
 	t.Run("env vars fallback", func(t *testing.T) {
-		os.Setenv("PORT", "7070")
-		os.Setenv("GEMINI_MODEL", "gemini-env-model")
-		defer func() {
-			os.Unsetenv("PORT")
-			os.Unsetenv("GEMINI_MODEL")
-		}()
+		t.Setenv("PORT", "7070")
+		t.Setenv("GEMINI_MODEL", "gemini-env-model")
 
 		port, model := resolveConfig("", "")
 		if port != "7070" {
@@ -44,8 +39,8 @@ func TestResolveConfig(t *testing.T) {
 
 	// Test default fallbacks
 	t.Run("default fallback", func(t *testing.T) {
-		os.Unsetenv("PORT")
-		os.Unsetenv("GEMINI_MODEL")
+		t.Setenv("PORT", "")
+		t.Setenv("GEMINI_MODEL", "")
 
 		port, model := resolveConfig("", "")
 		if port != "8080" {

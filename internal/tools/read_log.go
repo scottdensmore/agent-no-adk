@@ -41,36 +41,23 @@ func ReadLogFile(path string, maxLines int, offset int) (*ReadLogResult, error) 
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
-	var allLines []string
+	lines := make([]string, 0)
+	lineIdx := 0
 	for scanner.Scan() {
-		allLines = append(allLines, scanner.Text())
+		if lineIdx >= offset && len(lines) < maxLines {
+			lines = append(lines, scanner.Text())
+		}
+		lineIdx++
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading log file %q: %w", path, err)
 	}
 
-	total := len(allLines)
-	if offset >= total {
-		return &ReadLogResult{
-			FilePath:   path,
-			TotalLines: total,
-			Offset:     offset,
-			LinesRead:  0,
-			Lines:      []string{},
-		}, nil
-	}
-
-	end := offset + maxLines
-	if end > total {
-		end = total
-	}
-
-	sliced := allLines[offset:end]
 	return &ReadLogResult{
 		FilePath:   path,
-		TotalLines: total,
+		TotalLines: lineIdx,
 		Offset:     offset,
-		LinesRead:  len(sliced),
-		Lines:      sliced,
+		LinesRead:  len(lines),
+		Lines:      lines,
 	}, nil
 }
