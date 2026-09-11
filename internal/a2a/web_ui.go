@@ -190,6 +190,45 @@ const webUIHTML = `<!DOCTYPE html>
       padding: 0;
     }
 
+    details.tool-trace {
+      margin-top: 16px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+    details.tool-trace summary {
+      cursor: pointer;
+      color: var(--primary);
+      font-weight: 600;
+      user-select: none;
+      font-size: 0.9rem;
+    }
+    details.tool-trace summary:hover {
+      color: var(--primary-hover);
+    }
+    details.tool-trace table {
+      width: 100%;
+      margin-top: 12px;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    details.tool-trace th, details.tool-trace td {
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      text-align: left;
+    }
+    details.tool-trace th {
+      background: var(--surface-hover);
+      color: var(--text-bright);
+    }
+    details.tool-trace code {
+      font-size: 0.82rem;
+      background: rgba(110, 118, 129, 0.25);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
     footer {
       background: var(--surface);
       border-top: 1px solid var(--border);
@@ -377,12 +416,21 @@ const webUIHTML = `<!DOCTYPE html>
         });
 
         const data = await response.json();
-        if (data.result && data.result.parts && data.result.parts[0]) {
-          loadingBubble.innerHTML = renderMarkdown(data.result.parts[0].text);
-        } else if (data.error) {
+        // Extract text supporting both wrapped A2AMessage (data.result.message) and direct (data.result)
+        const msg = (data && data.result && data.result.message) ? data.result.message : (data ? data.result : null);
+        let replyText = null;
+        if (msg && Array.isArray(msg.parts) && msg.parts.length > 0) {
+          replyText = msg.parts.map(p => p.text || '').join('\n');
+        } else if (data && typeof data.result === 'string') {
+          replyText = data.result;
+        }
+
+        if (replyText) {
+          loadingBubble.innerHTML = renderMarkdown(replyText);
+        } else if (data && data.error) {
           loadingBubble.innerHTML = renderMarkdown('⚠️ **Triage Error (' + data.error.code + '):** ' + data.error.message);
         } else {
-          loadingBubble.innerHTML = renderMarkdown('⚠️ Unexpected response format from agent.');
+          loadingBubble.innerHTML = renderMarkdown('⚠️ **Unexpected response format:**\n\n<pre>' + JSON.stringify(data, null, 2) + '</pre>');
         }
       } catch (err) {
         loadingBubble.innerHTML = renderMarkdown('⚠️ **Network/Transport Error:** ' + err.message);

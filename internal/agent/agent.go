@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"sre-triage-agent/internal/tools"
 
@@ -165,6 +166,13 @@ func (a *Agent) Invoke(ctx context.Context, userPrompt string, contextID string)
 	toolDefs := tools.GetToolDeclarations()
 	maxTurns := 8
 
+	type toolExecRecord struct {
+		turn int
+		name string
+		args string
+	}
+	var executedTools []toolExecRecord
+
 	for turn := 0; turn < maxTurns; turn++ {
 		slog.Default().DebugContext(ctx, "Executing agent triage turn", "turn", turn, "context_id", contextID)
 
@@ -215,12 +223,37 @@ func (a *Agent) Invoke(ctx context.Context, userPrompt string, contextID string)
 				}
 			}
 			slog.Default().InfoContext(ctx, "Agent completed triage", "context_id", contextID, "turns", turn+1)
+
+			if len(executedTools) > 0 {
+				var traceSection strings.Builder
+				traceSection.WriteString(fmt.Sprintf("\n\n---\n<details class=\"tool-trace\">\n<summary><b>🛠️ Tool Execution Trace (%d tool calls)</b></summary>\n\n", len(executedTools)))
+				traceSection.WriteString("| Turn | Tool | Arguments |\n")
+				traceSection.WriteString("|:---|:---|:---|\n")
+				for _, rec := range executedTools {
+					cleanArgs := rec.args
+					if len(cleanArgs) > 80 {
+						cleanArgs = cleanArgs[:77] + "..."
+					}
+					traceSection.WriteString(fmt.Sprintf("| Turn %d | `code`%s`/code` | `code`%s`/code` |\n", rec.turn, rec.name, cleanArgs))
+				}
+				traceSection.WriteString("\n</details>\n")
+				textOutput += strings.ReplaceAll(traceSection.String(), "`code`", "<code>")
+				textOutput = strings.ReplaceAll(textOutput, "`/code`", "</code>")
+			}
+
 			return textOutput, nil
 		}
 
 		// Execute function calls
 		var responseParts []*genai.Part
 		for _, fc := range functionCalls {
+			argsBytes, _ := json.Marshal(fc.Args)
+			executedTools = append(executedTools, toolExecRecord{
+				turn: turn + 1,
+				name: fc.Name,
+				args: string(argsBytes),
+			})
+
 			slog.Default().InfoContext(ctx, "Executing tool call", "tool", fc.Name, "context_id", contextID)
 			toolCtx, toolSpan := tr.Start(ctx, "tool."+fc.Name,
 				trace.WithAttributes(

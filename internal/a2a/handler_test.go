@@ -225,6 +225,59 @@ func TestWebUIEndpoint(t *testing.T) {
 	}
 }
 
+func TestADKCompatEndpoints(t *testing.T) {
+	handler := NewHandler("sre-triage-agent", mockInvoker)
+
+	// 1. Test GET /apps/{app_name}/app-info
+	reqInfo := httptest.NewRequest("GET", "/apps/sre-triage-agent/app-info", nil)
+	wInfo := httptest.NewRecorder()
+	handler.ServeHTTP(wInfo, reqInfo)
+
+	if wInfo.Code != http.StatusOK {
+		t.Fatalf("expected 200 for app-info, got %d", wInfo.Code)
+	}
+	var appInfo map[string]any
+	if err := json.NewDecoder(wInfo.Body).Decode(&appInfo); err != nil {
+		t.Fatalf("failed to decode app-info: %v", err)
+	}
+	if appInfo["rootAgentName"] != "sre-triage-agent" {
+		t.Errorf("expected rootAgentName 'sre-triage-agent', got %v", appInfo["rootAgentName"])
+	}
+
+	// 2. Test POST /apps/{app_name}/users/{user_id}/sessions
+	reqSession := httptest.NewRequest("POST", "/apps/sre-triage-agent/users/user1/sessions", strings.NewReader(`{}`))
+	wSession := httptest.NewRecorder()
+	handler.ServeHTTP(wSession, reqSession)
+
+	if wSession.Code != http.StatusOK {
+		t.Fatalf("expected 200 for session creation, got %d", wSession.Code)
+	}
+	var sessionResp map[string]any
+	if err := json.NewDecoder(wSession.Body).Decode(&sessionResp); err != nil {
+		t.Fatalf("failed to decode session response: %v", err)
+	}
+	if sessionResp["id"] == nil || sessionResp["id"] == "" {
+		t.Errorf("expected session id, got %v", sessionResp)
+	}
+
+	// 3. Test POST /run_sse
+	sseBody := `{"appName":"sre-triage-agent","userId":"user1","sessionId":"s1","newMessage":{"parts":[{"text":"ping"}]}}`
+	reqSSE := httptest.NewRequest("POST", "/run_sse", strings.NewReader(sseBody))
+	wSSE := httptest.NewRecorder()
+	handler.ServeHTTP(wSSE, reqSSE)
+
+	if wSSE.Code != http.StatusOK {
+		t.Fatalf("expected 200 for run_sse, got %d", wSSE.Code)
+	}
+	if !strings.Contains(wSSE.Header().Get("Content-Type"), "text/event-stream") {
+		t.Errorf("expected text/event-stream content-type, got %s", wSSE.Header().Get("Content-Type"))
+	}
+	sseOutput := wSSE.Body.String()
+	if !strings.Contains(sseOutput, "data: ") || !strings.Contains(sseOutput, "Echo response for: ping") {
+		t.Errorf("expected SSE event with echo response, got: %s", sseOutput)
+	}
+}
+
 func TestRootPostInvoke(t *testing.T) {
 	handler := NewHandler("sre-triage-agent", mockInvoker)
 

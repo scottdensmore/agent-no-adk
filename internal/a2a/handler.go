@@ -37,6 +37,8 @@ func NewHandler(appName string, invoker AgentInvoker) http.Handler {
 	mux.HandleFunc("/list-apps", h.handleListApps)
 	mux.HandleFunc("/chat", h.handleWebUI)
 	mux.HandleFunc("/ui", h.handleWebUI)
+	mux.HandleFunc("/apps/", h.handleAppsRouter)
+	mux.HandleFunc("/run_sse", h.handleRunSSE)
 	mux.HandleFunc("/", h.handleRoot)
 
 	return mux

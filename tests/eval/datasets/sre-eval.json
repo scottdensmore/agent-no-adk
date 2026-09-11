@@ -1,0 +1,25 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "db_exhaustion_triage",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Triage the incident in sample_logs/db_exhaustion.log"}]
+      }
+    },
+    {
+      "eval_case_id": "gateway_timeout_triage",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Triage the incident in sample_logs/gateway_timeout.log"}]
+      }
+    },
+    {
+      "eval_case_id": "normal_startup_check",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Triage the incident in sample_logs/normal_startup.log"}]
+      }
+    }
+  ]
+}

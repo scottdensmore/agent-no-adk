@@ -14,3 +14,4 @@ bin/
 # Test artifacts
 *.out
 *.test
+artifacts/
