@@ -43,7 +43,24 @@ func setupHandler(sreAgent *agent.Agent) http.Handler {
 		return sreAgent.Invoke(ctx, message, contextID)
 	}
 
-	return a2a.NewHandler("sre-triage-agent", invoker)
+	streamInvoker := func(ctx context.Context, message string, contextID string, onEvent a2a.StreamCallback) (string, error) {
+		if sreAgent == nil {
+			return "Agent credentials not configured. Set GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT with ADC.", nil
+		}
+		return sreAgent.InvokeWithEvents(ctx, message, contextID, func(ev agent.AgentEvent) {
+			if onEvent != nil {
+				onEvent(a2a.StreamEvent{
+					Type:     ev.Type,
+					Name:     ev.Name,
+					Args:     ev.Args,
+					Response: ev.Response,
+					Text:     ev.Text,
+				})
+			}
+		})
+	}
+
+	return a2a.NewHandler("sre-triage-agent", invoker, a2a.WithStreamInvoker(streamInvoker))
 }
 
 func main() {

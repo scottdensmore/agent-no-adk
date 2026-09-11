@@ -18,15 +18,27 @@ import (
 
 type AgentInvoker func(ctx context.Context, message string, contextID string) (string, error)
 
-type Handler struct {
-	appName string
-	invoker AgentInvoker
+type HandlerOption func(*Handler)
+
+func WithStreamInvoker(si StreamInvoker) HandlerOption {
+	return func(h *Handler) {
+		h.streamInvoker = si
+	}
 }
 
-func NewHandler(appName string, invoker AgentInvoker) http.Handler {
+type Handler struct {
+	appName       string
+	invoker       AgentInvoker
+	streamInvoker StreamInvoker
+}
+
+func NewHandler(appName string, invoker AgentInvoker, opts ...HandlerOption) http.Handler {
 	h := &Handler{
 		appName: appName,
 		invoker: invoker,
+	}
+	for _, opt := range opts {
+		opt(h)
 	}
 
 	mux := http.NewServeMux()

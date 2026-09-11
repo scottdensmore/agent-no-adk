@@ -85,28 +85,65 @@ func (h *Handler) handleRunSSE(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.New().String()
 	}
 
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, hasFlusher := w.(http.Flusher)
+
+	writeSSE := func(author string, role string, part map[string]any) {
+		payload := map[string]any{
+			"author": author,
+			"content": map[string]any{
+				"role":  role,
+				"parts": []map[string]any{part},
+			},
+		}
+		if b, err := json.Marshal(payload); err == nil {
+			fmt.Fprintf(w, "data: %s\n\n", b)
+			if hasFlusher {
+				flusher.Flush()
+			}
+		}
+	}
+
+	if h.streamInvoker != nil {
+		_, err := h.streamInvoker(r.Context(), promptBuilder.String(), sessionID, func(ev StreamEvent) {
+			switch ev.Type {
+			case "functionCall":
+				writeSSE(h.appName, "model", map[string]any{
+					"functionCall": map[string]any{
+						"name": ev.Name,
+						"args": ev.Args,
+					},
+				})
+			case "functionResponse":
+				writeSSE(h.appName, "tool", map[string]any{
+					"functionResponse": map[string]any{
+						"name":     ev.Name,
+						"response": ev.Response,
+					},
+				})
+			case "text":
+				writeSSE(h.appName, "model", map[string]any{
+					"text": ev.Text,
+				})
+			}
+		})
+		if err != nil {
+			writeSSE(h.appName, "model", map[string]any{
+				"text": fmt.Sprintf("Error executing agent: %v", err),
+			})
+		}
+		return
+	}
+
 	answer, err := h.invoker(r.Context(), promptBuilder.String(), sessionID)
 	if err != nil {
 		answer = fmt.Sprintf("Error executing agent: %v", err)
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	eventPayload := map[string]any{
-		"author": h.appName,
-		"content": map[string]any{
-			"role": "model",
-			"parts": []map[string]any{
-				{"text": answer},
-			},
-		},
-	}
-	eventJSON, _ := json.Marshal(eventPayload)
-
-	fmt.Fprintf(w, "data: %s\n\n", eventJSON)
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
+	writeSSE(h.appName, "model", map[string]any{
+		"text": answer,
+	})
 }

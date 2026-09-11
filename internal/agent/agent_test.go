@@ -512,3 +512,98 @@ func TestAgentInvoke_Telemetry(t *testing.T) {
 	}
 }
 
+func TestAgentInvokeWithEvents(t *testing.T) {
+	step := 0
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var resp map[string]any
+		if step == 0 {
+			step++
+			resp = map[string]any{
+				"candidates": []map[string]any{
+					{
+						"content": map[string]any{
+							"role": "model",
+							"parts": []map[string]any{
+								{
+									"functionCall": map[string]any{
+										"name": "read_log_file",
+										"args": map[string]any{
+											"file_path": "sample.log",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+		} else {
+			resp = map[string]any{
+				"candidates": []map[string]any{
+					{
+						"content": map[string]any{
+							"role": "model",
+							"parts": []map[string]any{
+								{
+									"text": "Triage analysis complete.",
+								},
+							},
+						},
+					},
+				},
+			}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockServer.Close()
+
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend: genai.BackendGeminiAPI,
+		APIKey:  "test-api-key",
+		HTTPOptions: genai.HTTPOptions{
+			BaseURL: mockServer.URL + "/",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	agent := &Agent{
+		client:    client,
+		ModelName: "gemini-3.8-flash",
+		dispatcher: func(name string, args map[string]any) (any, error) {
+			return map[string]any{"status": "ok"}, nil
+		},
+	}
+
+	var events []AgentEvent
+	onEvent := func(ev AgentEvent) {
+		events = append(events, ev)
+	}
+
+	res, err := agent.InvokeWithEvents(ctx, "Triage sample.log", "ctx-events-1", onEvent)
+	if err != nil {
+		t.Fatalf("InvokeWithEvents failed: %v", err)
+	}
+	if !strings.Contains(res, "Triage analysis complete.") {
+		t.Errorf("expected final text, got: %s", res)
+	}
+
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events (functionCall, functionResponse, text), got %d: %+v", len(events), events)
+	}
+
+	if events[0].Type != "functionCall" || events[0].Name != "read_log_file" {
+		t.Errorf("expected event[0] to be functionCall for read_log_file, got: %+v", events[0])
+	}
+	if events[1].Type != "functionResponse" || events[1].Name != "read_log_file" {
+		t.Errorf("expected event[1] to be functionResponse for read_log_file, got: %+v", events[1])
+	}
+	if events[2].Type != "text" || !strings.Contains(events[2].Text, "Triage analysis complete.") {
+		t.Errorf("expected event[2] to be text containing final answer, got: %+v", events[2])
+	}
+}
+
+

@@ -1,6 +1,9 @@
 package a2a
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 type AgentCard struct {
 	ProtocolVersion     string            `json:"protocolVersion"`
@@ -126,3 +129,15 @@ type JSONRPCError struct {
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
 }
+
+type StreamEvent struct {
+	Type     string         `json:"type"`
+	Name     string         `json:"name,omitempty"`
+	Args     map[string]any `json:"args,omitempty"`
+	Response map[string]any `json:"response,omitempty"`
+	Text     string         `json:"text,omitempty"`
+}
+
+type StreamCallback func(event StreamEvent)
+type StreamInvoker func(ctx context.Context, message string, contextID string, onEvent StreamCallback) (string, error)
+

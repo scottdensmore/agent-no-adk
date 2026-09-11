@@ -278,6 +278,96 @@ func TestADKCompatEndpoints(t *testing.T) {
 	}
 }
 
+func TestRunSSEStreamingWithEvents(t *testing.T) {
+	mockStreamInvoker := func(ctx context.Context, message string, contextID string, onEvent StreamCallback) (string, error) {
+		onEvent(StreamEvent{
+			Type: "functionCall",
+			Name: "read_log_file",
+			Args: map[string]any{"path": "test.log"},
+		})
+		onEvent(StreamEvent{
+			Type:     "functionResponse",
+			Name:     "read_log_file",
+			Response: map[string]any{"lines": []string{"error occurred"}},
+		})
+		onEvent(StreamEvent{
+			Type: "text",
+			Text: "Analysis finished.",
+		})
+		return "Analysis finished.", nil
+	}
+
+	handler := NewHandler("sre-triage-agent", mockInvoker, WithStreamInvoker(mockStreamInvoker))
+
+	sseBody := `{"appName":"sre-triage-agent","userId":"user1","sessionId":"s1","newMessage":{"parts":[{"text":"analyze test.log"}]}}`
+	reqSSE := httptest.NewRequest("POST", "/run_sse", strings.NewReader(sseBody))
+	wSSE := httptest.NewRecorder()
+	handler.ServeHTTP(wSSE, reqSSE)
+
+	if wSSE.Code != http.StatusOK {
+		t.Fatalf("expected 200 for run_sse, got %d", wSSE.Code)
+	}
+	if !strings.Contains(wSSE.Header().Get("Content-Type"), "text/event-stream") {
+		t.Errorf("expected text/event-stream content-type, got %s", wSSE.Header().Get("Content-Type"))
+	}
+
+	output := wSSE.Body.String()
+	lines := strings.Split(output, "\n")
+	var dataEvents []map[string]any
+	for _, l := range lines {
+		if strings.HasPrefix(l, "data: ") {
+			var ev map[string]any
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(l, "data: ")), &ev); err != nil {
+				t.Fatalf("failed to unmarshal SSE event: %v", err)
+			}
+			dataEvents = append(dataEvents, ev)
+		}
+	}
+
+	if len(dataEvents) != 3 {
+		t.Fatalf("expected 3 data events, got %d: %s", len(dataEvents), output)
+	}
+
+	// 1. functionCall event
+	ev1 := dataEvents[0]
+	if ev1["author"] != "sre-triage-agent" {
+		t.Errorf("expected author sre-triage-agent, got %v", ev1["author"])
+	}
+	content1, _ := ev1["content"].(map[string]any)
+	if content1["role"] != "model" {
+		t.Errorf("expected role model for functionCall, got %v", content1["role"])
+	}
+	parts1, _ := content1["parts"].([]any)
+	part1, _ := parts1[0].(map[string]any)
+	if part1["functionCall"] == nil {
+		t.Errorf("expected functionCall in part1, got %v", part1)
+	}
+
+	// 2. functionResponse event
+	ev2 := dataEvents[1]
+	content2, _ := ev2["content"].(map[string]any)
+	if content2["role"] != "tool" {
+		t.Errorf("expected role tool for functionResponse, got %v", content2["role"])
+	}
+	parts2, _ := content2["parts"].([]any)
+	part2, _ := parts2[0].(map[string]any)
+	if part2["functionResponse"] == nil {
+		t.Errorf("expected functionResponse in part2, got %v", part2)
+	}
+
+	// 3. text event
+	ev3 := dataEvents[2]
+	content3, _ := ev3["content"].(map[string]any)
+	if content3["role"] != "model" {
+		t.Errorf("expected role model for text event, got %v", content3["role"])
+	}
+	parts3, _ := content3["parts"].([]any)
+	part3, _ := parts3[0].(map[string]any)
+	if part3["text"] != "Analysis finished." {
+		t.Errorf("expected 'Analysis finished.' in text part, got %v", part3["text"])
+	}
+}
+
 func TestRootPostInvoke(t *testing.T) {
 	handler := NewHandler("sre-triage-agent", mockInvoker)
 
