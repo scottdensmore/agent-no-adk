@@ -118,6 +118,14 @@ func DispatchTool(name string, argsMap map[string]any) (any, error) {
 		if err := json.Unmarshal(data, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments for read_log_file: %w", err)
 		}
+		if args.FilePath == "" {
+			for _, k := range []string{"path", "filePath", "filepath", "file", "filename"} {
+				if s, ok := argsMap[k].(string); ok && s != "" {
+					args.FilePath = s
+					break
+				}
+			}
+		}
 		return ReadLogFile(args.FilePath, args.MaxLines, args.Offset)
 
 	case "parse_log_snippet":
@@ -125,12 +133,32 @@ func DispatchTool(name string, argsMap map[string]any) (any, error) {
 		if err := json.Unmarshal(data, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments for parse_log_snippet: %w", err)
 		}
+		if args.LogText == "" {
+			for _, k := range []string{"raw_log", "rawLog", "text", "log", "snippet"} {
+				if s, ok := argsMap[k].(string); ok && s != "" {
+					args.LogText = s
+					break
+				}
+			}
+		}
 		return ParseLogSnippet(args.LogText)
 
 	case "format_incident_report":
 		var args IncidentReportParams
 		if err := json.Unmarshal(data, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments for format_incident_report: %w", err)
+		}
+		if args.IncidentID == "" {
+			args.IncidentID = "INC-1001"
+		}
+		if len(args.MitigationSteps) == 0 {
+			if items, ok := argsMap["action_items"].([]any); ok {
+				for _, it := range items {
+					if s, ok := it.(string); ok {
+						args.MitigationSteps = append(args.MitigationSteps, s)
+					}
+				}
+			}
 		}
 		report, err := FormatIncidentReport(args)
 		if err != nil {

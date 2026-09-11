@@ -338,6 +338,7 @@ func (a *Agent) InvokeWithEvents(ctx context.Context, userPrompt string, context
 
 			responseParts = append(responseParts, &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
+					ID:       fc.ID,
 					Name:     fc.Name,
 					Response: resultMap,
 				},
@@ -345,7 +346,7 @@ func (a *Agent) InvokeWithEvents(ctx context.Context, userPrompt string, context
 		}
 
 		history = append(history, &genai.Content{
-			Role:  "tool",
+			Role:  genai.RoleUser,
 			Parts: responseParts,
 		})
 	}
