@@ -1,0 +1,5 @@
+2026-09-11T06:00:00Z INFO [auth-service] Starting Auth Service v2.4.1 on port 8080
+2026-09-11T06:00:01Z INFO [auth-service] Loaded 14 permission scopes from configuration
+2026-09-11T06:00:02Z INFO [auth-service] Connected to Redis cache at 10.0.4.12:6379 (latency: 0.8ms)
+2026-09-11T06:00:03Z WARN [auth-service] Configuration option 'legacy_tokens' is deprecated and will be removed in v3.0
+2026-09-11T06:00:04Z INFO [auth-service] Health check listening on /healthz. Ready to accept connections.

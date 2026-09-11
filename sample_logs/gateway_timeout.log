@@ -1,0 +1,5 @@
+2026-09-11T08:00:10Z INFO [frontend] GET /catalog/items duration=120ms status=200
+2026-09-11T08:00:45Z WARN [api-gateway] Upstream request to inventory-service took 28400ms exceeding warning threshold (5000ms)
+2026-09-11T08:01:12Z ERROR [api-gateway] HTTP 504 Gateway Timeout: upstream inventory-service failed to respond within 30000ms
+2026-09-11T08:01:15Z WARN [inventory-service] High GC pause detected: 4820ms, JVM old-gen occupancy at 88%
+2026-09-11T08:01:30Z WARN [inventory-service] Thread pool near capacity: 192/200 active threads

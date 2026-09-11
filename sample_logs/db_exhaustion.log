@@ -1,0 +1,6 @@
+2026-09-11T07:15:02Z INFO [api-gateway] Received POST /api/v1/orders from client 198.51.100.24 Authorization: Bearer secret-token-xyz-12345
+2026-09-11T07:15:03Z ERROR [order-service] Failed to acquire connection from pool 'OrderDBPool': ConnectionPoolTimeoutException: Timeout waiting for idle connection after 30000ms. Active: 100/100, Idle: 0, Pending: 47
+2026-09-11T07:15:04Z ERROR [order-service] HTTP 500 Internal Server Error: org.postgresql.util.PSQLException: ConnectionPoolTimeoutException: Pool exhausted
+2026-09-11T07:15:05Z ERROR [api-gateway] Upstream error: order-service returned 500 Internal Server Error
+2026-09-11T07:15:06Z ERROR [payment-service] DeadlockDetected: transaction 49201 waiting on lock held by transaction 49198 on table 'accounts'
+2026-09-11T07:15:07Z FATAL [order-service] OutOfMemoryError / connection starvation: unable to process backlog, rejecting requests
