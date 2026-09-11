@@ -1,15 +1,20 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/genai"
 )
 
@@ -424,3 +429,86 @@ func TestInvoke_ToolDispatcherErrorAndScalarResult(t *testing.T) {
 		t.Errorf("unexpected result: %s", result)
 	}
 }
+
+func TestAgentInvoke_Telemetry(t *testing.T) {
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
+	otel.SetTracerProvider(tp)
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"candidates": []map[string]any{
+				{
+					"content": map[string]any{
+						"role": "model",
+						"parts": []map[string]any{
+							{
+								"text": "Telemetry verified.",
+							},
+						},
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockServer.Close()
+
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend: genai.BackendGeminiAPI,
+		APIKey:  "test-api-key",
+		HTTPOptions: genai.HTTPOptions{
+			BaseURL: mockServer.URL + "/",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	slog.SetDefault(logger)
+
+	agent := &Agent{
+		client:    client,
+		ModelName: "gemini-3.8-flash",
+	}
+
+	res, err := agent.Invoke(ctx, "Test prompt", "ctx-telemetry-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res != "Telemetry verified." {
+		t.Fatalf("unexpected result: %s", res)
+	}
+
+	// Verify spans
+	spans := exp.GetSpans()
+	hasAgentInvoke := false
+	for _, s := range spans {
+		if s.Name == "agent.invoke" {
+			hasAgentInvoke = true
+			foundCtx := false
+			for _, attr := range s.Attributes {
+				if string(attr.Key) == "agent.context_id" && attr.Value.AsString() == "ctx-telemetry-123" {
+					foundCtx = true
+				}
+			}
+			if !foundCtx {
+				t.Errorf("agent.invoke span missing agent.context_id attribute")
+			}
+		}
+	}
+	if !hasAgentInvoke {
+		t.Errorf("expected 'agent.invoke' span, got spans: %v", spans)
+	}
+
+	// Verify structured logging output contains context_id
+	logStr := logBuf.String()
+	if !strings.Contains(logStr, "ctx-telemetry-123") {
+		t.Errorf("expected logs to contain context_id 'ctx-telemetry-123', got: %s", logStr)
+	}
+}
+

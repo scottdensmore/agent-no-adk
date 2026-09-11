@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +13,7 @@ import (
 
 	"sre-triage-agent/internal/a2a"
 	"sre-triage-agent/internal/agent"
+	"sre-triage-agent/internal/telemetry"
 )
 
 func resolveConfig(portFlag, modelFlag string) (port string, model string) {
@@ -54,11 +56,29 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Initialize OpenTelemetry Cloud Trace
+	shutdownTracer, err := telemetry.InitTracer(ctx, "sre-triage-agent")
+	if err != nil {
+		log.Printf("Warning: OpenTelemetry tracer initialization failed: %v", err)
+	} else {
+		defer func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := shutdownTracer(shutdownCtx); err != nil {
+				log.Printf("Error shutting down tracer: %v", err)
+			}
+		}()
+	}
+
+	// Initialize Cloud Logging structured JSON logger
+	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
+	slog.SetDefault(telemetry.NewGCPLogger(projectID, os.Stdout, slog.LevelInfo))
+
 	sreAgent, err := agent.NewAgent(ctx, agent.Config{
 		Model: model,
 	})
 	if err != nil {
-		log.Printf("Warning: Live GenAI client initialization failed (%v). Starting server in fallback mode.", err)
+		slog.Warn("Live GenAI client initialization failed. Starting server in fallback mode.", "error", err)
 	}
 
 	handler := setupHandler(sreAgent)
@@ -71,23 +91,24 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("SRE Triage Agent listening on port %s", port)
-		log.Printf("Agent Card: http://localhost:%s/.well-known/agent-card.json", port)
+		slog.Info("SRE Triage Agent listening", "port", port, "model", model)
+		slog.Info("Agent Card endpoint", "url", "http://localhost:"+port+"/.well-known/agent-card.json")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			slog.Error("Server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
+	slog.Info("Shutting down server...")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+		slog.Error("Server shutdown error", "error", err)
 	}
-	log.Println("Server exited cleanly.")
+	slog.Info("Server exited cleanly.")
 }

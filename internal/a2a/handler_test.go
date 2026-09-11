@@ -10,6 +10,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func mockInvoker(_ context.Context, message string, contextID string) (string, error) {
@@ -428,12 +432,12 @@ func TestUnmatchedPathReturns404(t *testing.T) {
 		}
 	}
 
-	// Paths containing "." are canonicalized with 301 redirect by http.ServeMux
+	// Paths containing "." are canonicalized with redirect by http.ServeMux (301 or 307 in Go 1.25)
 	reqDot := httptest.NewRequest("GET", "/a2a/./.well-known/agent-card.json", nil)
 	wDot := httptest.NewRecorder()
 	handler.ServeHTTP(wDot, reqDot)
-	if wDot.Code != http.StatusMovedPermanently {
-		t.Errorf("expected 301 for path with dot, got %d", wDot.Code)
+	if wDot.Code != http.StatusMovedPermanently && wDot.Code != http.StatusTemporaryRedirect {
+		t.Errorf("expected redirect (301 or 307) for path with dot, got %d", wDot.Code)
 	}
 }
 
@@ -474,5 +478,48 @@ func TestA2AMessageSerialization(t *testing.T) {
 	}
 	if directMsg.Role != "agent" || directMsg.Parts[0].Text != "Direct" {
 		t.Errorf("unexpected direct message: %+v", directMsg)
+	}
+}
+
+func TestInvoke_TraceContextPropagation(t *testing.T) {
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	var capturedTraceID string
+
+	tracingInvoker := func(ctx context.Context, message string, contextID string) (string, error) {
+		span := trace.SpanFromContext(ctx)
+		capturedTraceID = span.SpanContext().TraceID().String()
+		return "trace ok", nil
+	}
+
+	handler := NewHandler("sre-triage-agent", tracingInvoker)
+
+	payload := JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      "req-trace",
+		Method:  "message/send",
+		Params: MessageSendParams{
+			Message: A2AMessage{
+				Parts:     []A2APart{{Text: "trace test"}},
+				ContextID: "ctx-1",
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest("POST", "/a2a/invoke", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	// W3C traceparent header with trace ID 4bf92f3577b34da6a3ce929d0e0e4736
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	expectedTraceID := "4bf92f3577b34da6a3ce929d0e0e4736"
+	if capturedTraceID != expectedTraceID {
+		t.Errorf("expected captured trace ID %q, got %q", expectedTraceID, capturedTraceID)
 	}
 }

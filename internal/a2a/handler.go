@@ -10,6 +10,10 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type AgentInvoker func(ctx context.Context, message string, contextID string) (string, error)
@@ -105,20 +109,30 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleInvoke(w http.ResponseWriter, r *http.Request) {
+	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	tr := otel.Tracer("sre-triage-agent")
+	ctx, span := tr.Start(ctx, "a2a.invoke", trace.WithSpanKind(trace.SpanKindServer))
+	defer span.End()
+
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "request body read error")
 		h.writeError(w, nil, -32700, "Request body too large or failed to read")
 		return
 	}
 
 	var req JSONRPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "parse error")
 		h.writeError(w, nil, -32700, "Parse error")
 		return
 	}
 
 	if req.Method != "message/send" && req.Method != "tasks/create" && req.Method != "SendMessage" && req.Method != "SendStreamingMessage" {
+		span.SetStatus(codes.Error, "method not found")
 		h.writeError(w, req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
 		return
 	}
@@ -138,8 +152,10 @@ func (h *Handler) handleInvoke(w http.ResponseWriter, r *http.Request) {
 		contextID = uuid.New().String()
 	}
 
-	answer, err := h.invoker(r.Context(), promptText.String(), contextID)
+	answer, err := h.invoker(ctx, promptText.String(), contextID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		h.writeError(w, req.ID, -32000, fmt.Sprintf("Agent execution failed: %v", err))
 		return
 	}
