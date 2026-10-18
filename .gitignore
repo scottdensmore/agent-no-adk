@@ -45,4 +45,3 @@ artifacts/
 __pycache__/
 *.py[cod]
 .venv/
-.superpowers/
